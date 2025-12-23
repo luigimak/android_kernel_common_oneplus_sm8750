@@ -1,36 +1,50 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/init.h>
-#include <linux/of_fdt.h>
-#include <linux/libfdt.h>
+#include <linux/of.h>
+#include <linux/slab.h>
 
-static int __init hmbird_dt_fixup(void)
+static int __init hmbird_add_dt_node(void)
 {
-	void *fdt = initial_boot_params;
-	int soc, hmbird, version_type;
+	struct device_node *soc, *hmbird, *version_type;
+	const char *type_val = "HMBIRD_OGKI";
 
-	if (!fdt)
-		return 0;
+	// Find /soc
+	soc = of_find_node_by_path("/soc");
+	if (!soc) {
+		pr_err("HMBird: /soc not found\n");
+		return -ENODEV;
+	}
 
-	soc = fdt_path_offset(fdt, "/soc");
-	if (soc < 0)
-		return 0;
+	// Remove oplus,xxbird if exists
+	of_remove_property(soc, of_find_property(soc, "oplus,xxbird", NULL));
 
-	// Rimuovi oplus,xxbird se esiste
-	fdt_del_node(fdt, fdt_subnode_offset(fdt, soc, "oplus,xxbird"));
+	// Create oplus,hmbird
+	hmbird = of_new_node(soc, "oplus,hmbird", NULL);
+	if (!hmbird) {
+		pr_err("HMBird: failed to create hmbird node\n");
+		of_node_put(soc);
+		return -ENOMEM;
+	}
 
-	// Crea /soc/oplus,hmbird
-	hmbird = fdt_add_subnode(fdt, soc, "oplus,hmbird");
-	if (hmbird < 0)
-		return 0;
+	// Create version_type
+	version_type = of_new_node(hmbird, "version_type", NULL);
+	if (!version_type) {
+		pr_err("HMBird: failed to create version_type\n");
+		of_node_put(hmbird);
+		of_node_put(soc);
+		return -ENOMEM;
+	}
 
-	// Crea /soc/oplus,hmbird/version_type
-	version_type = fdt_add_subnode(fdt, hmbird, "version_type");
-	if (version_type < 0)
-		return 0;
+	// Set "type"
+	of_add_property_string(version_type, "type", type_val);
 
-	// Imposta type = "HMBIRD_OGKI"
-	fdt_setprop_string(fdt, version_type, "type", "HMBIRD_OGKI");
+	pr_info("HMBird: DT node added successfully\n");
 
+	of_node_put(version_type);
+	of_node_put(hmbird);
+	of_node_put(soc);
 	return 0;
 }
-early_initcall(hmbird_dt_fixup);
+
+// Use late_initcall: DT tree is already unflattened
+late_initcall(hmbird_add_dt_node);
